@@ -202,4 +202,4 @@ if __name__ == "__main__":
     converter = RelationalToXESConverter('Invoice', None, 'InvoiceDate', 'CustomerId', annotations)
     converter.set_database_adapter(sqlite3)
     converter.set_db_access_params(db_access_params)
-    print(converter.build_event_log())
+    print(converter.build_event_log("ChinookLog"))
