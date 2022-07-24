@@ -14,7 +14,7 @@ class Extractor:
         self.case_id_key = case_id_key
         self.activity_id_key = activity_id_key
         self.timestamp_id_key = timestamp_id_key
-        self.annotations = annotations # 5-tuples of (table1, table2, att1, att2, annot_type)
+        self.annotations = annotations.copy() # 5-tuples of (table1, table2, att1, att2, annot_type)
         self.view_name = 'a'+uuid.uuid4().hex
         self.col_names = dict()
         self.case_columns = []
@@ -73,7 +73,7 @@ class Extractor:
         query += f"SELECT * FROM table{counter-1};"
         return query
 
-    def extract(self, db_access_params):
+    def extract_old(self, db_access_params):
         '''
         Extract the tabular log
         return the tabular log with its column names for further processing
@@ -112,7 +112,43 @@ class Extractor:
             return event_log
         except (Exception, psycopg2.DatabaseError) as error:
             print(error)
+
+    def retrieve_table(self, table_name, db_access_params):
+        '''
+        Retrieve a table from the database and return as a pandas DF
+        '''
+        query = f"SELECT * FROM {table_name};"
+        conn = psycopg2.connect(**db_access_params)
+        cur = conn.cursor()
+        cur.execute(query)
+        data = cur.fetchall()
+        colnames = [desc[0] for desc in cur.description]
+        df = pd.DataFrame(data=data, columns=colnames)
+        conn.close()
+        return df
+
+    def extract(self, db_access_params):
+        '''
+        Extract an XES from the database
+        '''
+        # First select the activity table
+        df_main = self.retrieve_table(self.activity_table, db_access_params)
+
+        # Go over the annotations and recursively merge other tables to the activity table
+        for i in range(len(annotations)):
+            # Retrieving the other table
+            annot = annotations[i]
+            if annot[0] == self.activity_table or annot[1] == self.activity_table:
+                other = None
+                if annot[0] == self.activity_table:
+                    other = annot[1]
+                else:
+                    other = annot[0]
+            df_other = self.retrieve_table(other, db_access_params)
             
+            # Merging
+
+        return df_main
 
 if __name__ == "__main__":
     # Test 1: Extract data from given the example csvs
@@ -128,13 +164,3 @@ if __name__ == "__main__":
         'dbname': 'test'
     })
     print(df)
-
-    # Test 2: Complex sql query
-    # annotations2 = [
-    #     ['TA', 'TB', 'A1', 'B1', '1-n'],
-    #     ['TB', 'TC', 'B2', 'C1', '1-1'],
-    #     ['TC', 'TD', 'C2', 'D1', '1-n'],
-    #     ['TE', 'TC', 'E1', 'C3', '1-n']
-    # ]
-    # extractor2 = Extractor('TA', 'TC', annotations2)
-    # print(extractor2.get_extract_query())
