@@ -86,7 +86,14 @@ class RelationalToXESConverter:
         conn.close()
         return colnames, data
 
-    def build_event_log(self, exported_log_name='exported'):
+    def build_event_log(
+            self, 
+            exported_log_name='exported',
+            activity_identifier=None,
+            default_activity=DEFAULT_ACTIVITY,
+            default_case_id=DEFAULT_CASE_ID,
+            default_timestamp=DEFAULT_TIMESTAMP
+        ):
         '''
         Build an event log based on the parameter provided to the converter
         '''
@@ -153,7 +160,6 @@ class RelationalToXESConverter:
                     table_store[t] = temp        
         
         # Creating the base event stream by transforming the event table to an EventStream
-        # 
         events = EventStream()
         for index, row in table_store[self.event_table].iterrows():
             event = Event()
@@ -161,12 +167,18 @@ class RelationalToXESConverter:
                 event[k] = row[k]
             for a in event_table_adj_annots:
                 if a.table1 != self.event_table:
-                    event[a.table1] = [table_store[a.table1][event[a.att2]]]
+                    event[a.table1] = table_store[a.table1][event[a.att2]]
                 else:
-                    event[a.table2] = [table_store[a.table2][event[a.att1]]]
-            event['time:timestamp'] = event.get(self.timestamp_key, RelationalToXESConverter.DEFAULT_TIMESTAMP)
-            event['case:concept:name'] = event.get(self.case_id_key, RelationalToXESConverter.DEFAULT_CASE_ID)
-            event['concept:name'] = event.get(self.activity_key, RelationalToXESConverter.DEFAULT_ACTIVITY)
+                    event[a.table2] = table_store[a.table2][event[a.att1]]
+            event['time:timestamp'] = event.get(self.timestamp_key, default_timestamp)
+            event['case:concept:name'] = event.get(self.case_id_key, default_case_id)
+            event['concept:name'] = event.get(self.activity_key, default_activity)
+            for k in event:
+                if isinstance(event[k], dict) and 'value' not in event[k]:
+                    temp = event[k].copy()
+                    event[k] = dict()
+                    event[k]['value'] = k
+                    event[k]['children'] = temp
             events.append(event)
 
         # Convert to event log
