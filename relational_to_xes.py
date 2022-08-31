@@ -27,11 +27,12 @@ class RelationalToXESConverter:
     DEFAULT_ACTIVITY = "@@DEFAULT_ACTIVITY@@"
     DEFAULT_TIMESTAMP = datetime.datetime(1970,1,1)
 
-    def __init__(self, event_table, activity_key, timestamp_key, case_id_key, annotations):
+    def __init__(self, event_table, case_table, activity_key, timestamp_key, case_id_key, annotations):
         '''
         Init the converter with needed parameters for an event log
         '''
         self.event_table = event_table
+        self.case_table = case_table
         self.activity_key = activity_key
         self.timestamp_key = timestamp_key
         self.case_id_key = case_id_key
@@ -89,7 +90,6 @@ class RelationalToXESConverter:
     def build_event_log(
             self, 
             exported_log_name='exported',
-            activity_identifier=None,
             default_activity=DEFAULT_ACTIVITY,
             default_case_id=DEFAULT_CASE_ID,
             default_timestamp=DEFAULT_TIMESTAMP
@@ -125,7 +125,12 @@ class RelationalToXESConverter:
                 new_table = new_table.drop([an.att1 + "_x"])
             if an.att2 + "_y" in new_table:
                 new_table = new_table.drop([an.att2 + "_y"])
-            table_store[an.table1] = new_table
+            table_name = ""
+            if an.table2 == self.case_table:
+                table_name = an.table2
+            else:
+                table_name = an.table1
+            table_store[table_name] = new_table
             for ann in event_table_adj_annots + event_table_not_adj_annots:
                 if ann.table1 == an.table2:
                     ann.table1 = an.table1
@@ -179,6 +184,8 @@ class RelationalToXESConverter:
                     event[k] = dict()
                     event[k]['value'] = k
                     event[k]['children'] = temp
+            event[f"case:{self.case_table}"] = event[self.case_table]
+            del event[self.case_table]
             events.append(event)
 
         # Convert to event log
@@ -211,7 +218,14 @@ if __name__ == "__main__":
         Annotation('Invoice', 'InvoiceLine', 'InvoiceId', 'InvoiceId', AnnotationType.ONE_TO_MANY)
     ]
 
-    converter = RelationalToXESConverter('Invoice', None, 'InvoiceDate', 'CustomerId', annotations)
+    converter = RelationalToXESConverter(
+        'Invoice',
+        'Customer', 
+        None, 
+        'InvoiceDate', 
+        'CustomerId', 
+        annotations
+    )
     converter.set_database_adapter(sqlite3)
     converter.set_db_access_params(db_access_params)
-    print(converter.build_event_log("ChinookLog"))
+    print(converter.build_event_log("ChinookLog", "my cool default activity"))
