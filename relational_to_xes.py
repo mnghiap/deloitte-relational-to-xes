@@ -1,4 +1,3 @@
-from __future__ import annotations
 from enum import Enum
 import psycopg2
 import sqlite3
@@ -90,6 +89,7 @@ class RelationalToXESConverter:
     def build_event_log(
             self, 
             exported_log_name='exported',
+            event_query=None,
             default_activity=DEFAULT_ACTIVITY,
             default_case_id=DEFAULT_CASE_ID,
             default_timestamp=DEFAULT_TIMESTAMP
@@ -166,6 +166,26 @@ class RelationalToXESConverter:
         
         # Creating the base event stream by transforming the event table to an EventStream
         events = EventStream()
+        if event_query == None:
+            event['concept:name'] = event.get(self.activity_key, default_activity)
+        else:
+            '''
+            A query would be in the form "if {expression} then {value} else if {expression2} then {value2} ... else if {expression_n} then {value_n} else {value_last}"
+            Access attribute value using event[attr]
+            '''
+            fallback_value_marker = "@@FALLBACK_VALUE_MARKER@@"
+            conditions = []
+            def parse_event_query(query, conditions):
+                index_if = query.find("if")
+                index_else = query.find("else")
+                index_then = query.find("then")
+                if index_if == -1:
+                    conditions.append([fallback_value_marker, query])
+                else:
+                    conditions.append([query[index_if+3:index_then-1], query[index_then+5: index_else-1]])
+                    parse_event_query(query[index_else+5:], conditions)
+            parse_event_query(event_query, conditions)
+            print(conditions)
         for index, row in table_store[self.event_table].iterrows():
             event = Event()
             for k in row.index:
@@ -177,7 +197,14 @@ class RelationalToXESConverter:
                     event[a.table2] = table_store[a.table2][event[a.att1]]
             event['time:timestamp'] = event.get(self.timestamp_key, default_timestamp)
             event['case:concept:name'] = event.get(self.case_id_key, default_case_id)
-            event['concept:name'] = event.get(self.activity_key, default_activity)
+            # Extract event query
+            for cond, ret in conditions:
+                if cond == fallback_value_marker:
+                    event["concept:name"] = eval(ret)
+                else:
+                    if eval(cond) == True:
+                        event["concept:name"] = eval(ret)
+                        break
             for k in event:
                 if isinstance(event[k], dict) and 'value' not in event[k]:
                     temp = event[k].copy()
@@ -228,4 +255,8 @@ if __name__ == "__main__":
     )
     converter.set_database_adapter(sqlite3)
     converter.set_db_access_params(db_access_params)
-    print(converter.build_event_log("ChinookLog", "my cool default activity"))
+    print(converter.build_event_log(
+        exported_log_name="ChinookLog", 
+        event_query="if event['BillingCity'] == 'Stuttgart' then 'Stuttgart invoice send' else if event['BillingCountry'] == 'Norway' then event['BillingAddress'] + ' cool event marker' else 'cool default invoice'",
+        default_activity="my cool default activity"
+    ))
